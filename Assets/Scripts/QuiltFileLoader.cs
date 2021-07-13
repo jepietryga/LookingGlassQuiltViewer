@@ -76,6 +76,7 @@ public class QuiltFileLoader : MonoBehaviour
     static readonly string[] imageExtensions = { "png", "jpg", "jpeg", "jfif" };
     static readonly string[] movieExtensions = { "mp4", "webm", "mov", "avi" };
 
+
     /// <summary>
     /// 読み込み待ちならtrueにする
     /// </summary>
@@ -113,18 +114,10 @@ public class QuiltFileLoader : MonoBehaviour
     float nextSlideTime = 0f;
 
     /// <summary>
-    /// これがtrueなら終了時にPlayerPrefsの設定を消去する
+    /// Currently known listening directory and enabled Bool
     /// </summary>
-    bool willSettingsReset = false;
-
-    /// <summary>
-    /// デフォルト画像のパス
-    /// </summary>
-    string defaultImagePath
-    {
-        get { return Path.Combine(Application.streamingAssetsPath, "startup.png"); }
-    }
-
+    List<string> currentFiles = new List<string>();
+    bool isListening = false;
 
     /// <summary>
     /// 保存された設定を読み込む
@@ -148,14 +141,6 @@ public class QuiltFileLoader : MonoBehaviour
         PlayerPrefs.SetInt(PrefItems.SlideShowInterval, slideShowInterval);
         PlayerPrefs.SetInt(PrefItems.FileInfoMode, (int)fileInfoMode);
         PlayerPrefs.SetString(PrefItems.StartupFilePath, currentFile);
-    }
-
-    /// <summary>
-    /// 保存されている設定をすべて消去
-    /// </summary>
-    private void DeleteSettings()
-    {
-        PlayerPrefs.DeleteAll();
     }
 
     /// <summary>
@@ -216,18 +201,18 @@ public class QuiltFileLoader : MonoBehaviour
         InitializeTextShadow();
 
         // サンプルの画像を読み込み
-        LoadFile(defaultImagePath);
+        LoadFile(Path.Combine(Application.streamingAssetsPath, "startup.png"));
 
         // メッセージ欄を最初に消去
         ShowMessage("");
         ShowFileInfo("");
 
-        // 保存された設定を読込
-        LoadSettings();
+        // PlayerPrefsから設定と前回のファイルを読み込み
+        // Player Preferences are not needed for general use
+        // LoadSettings();
 
         // スライドショーが行われるならその間隔を最初に表示
-        if (slideShowInterval > 0)
-        {
+        if (slideShowInterval > 0) {
             ShowMessage("Slideshow: " + slideShowInterval + " s");
         }
 
@@ -312,20 +297,6 @@ public class QuiltFileLoader : MonoBehaviour
                 SaveFile();
             }
 
-            // [R] キーでPlayerPrefsに保存された設定を消去し、デフォルトの画像を表示
-            if (Input.GetKeyDown(KeyCode.R))
-            {
-                DeleteSettings();
-
-                // デフォルトの画像を読み込み
-                LoadFile(defaultImagePath);
-
-                // 終了時に削除されるようにする
-                ShowFileInfo("History has been removed");
-                ShowMessage("Settings will be reset on quit");
-                willSettingsReset = true;
-            }
-
             // 前の画像
             if (Input.GetKeyDown(KeyCode.LeftArrow))
             {
@@ -346,7 +317,29 @@ public class QuiltFileLoader : MonoBehaviour
                 ToggleFileInfoMode();
             }
 
-            UpdateSlideShow();
+            // Begin Listening
+            if (Input.GetKeyDown(KeyCode.L))
+            {
+              isListening = true;
+              ShowMessage("Listening Activated");
+            }
+
+            if (Input.GetKeyDown(KeyCode.K))
+            {
+              isListening = false;
+              ShowMessage("Listening Deactivated");
+            }
+
+            if(isListening)
+            {
+              string fileHeard = listenNewFiles(ref currentFiles);
+              if (fileHeard != currentFile)
+              {
+                LoadFile(fileHeard);
+              }
+            }
+
+            //UpdateSlideShow();
         }
 
         // 左ボタンが押されていることを表示
@@ -359,18 +352,6 @@ public class QuiltFileLoader : MonoBehaviour
 
         UpdateMessage();
         UpdateFileInfo();
-    }
-
-    private void UpdatePreview2D()
-    {
-        // Looking Glass が見つかっていなければ、強制的に preview2D を有効とする
-        if (holoplay && !holoplay.preview2D)
-        {
-            if (holoplay.cal.serial == "")
-            {
-                holoplay.preview2D = true;
-            }
-        }
     }
 
     /// <summary>
@@ -392,7 +373,7 @@ public class QuiltFileLoader : MonoBehaviour
             LoadFile(GetNextFile(1));
         }
     }
-    
+
     /// <summary>
     /// 終了処理
     /// </summary>
@@ -411,12 +392,7 @@ public class QuiltFileLoader : MonoBehaviour
     /// </summary>
     private void OnApplicationQuit()
     {
-        if (willSettingsReset)
-        {
-            DeleteSettings();
-        }else { 
-            SaveSettings();
-        }
+        //SaveSettings();
     }
 
     /// <summary>
@@ -613,7 +589,7 @@ public class QuiltFileLoader : MonoBehaviour
 
         // 書き出し
         System.IO.File.WriteAllBytes(file, rawData);
-        OutputLog("Saved " + file);
+        Debug.Log("Saved " + file);
 
         // 保存したというメッセージを表示
         ShowMessage("Saved " + file);
@@ -629,7 +605,6 @@ public class QuiltFileLoader : MonoBehaviour
     /// <param name="uri">Path.</param>
     private void LoadFile(string path) {
         if (string.IsNullOrEmpty(path)) return;
-        if (!File.Exists(path)) return;
 
         isLoading = true;
         currentFile = path;
@@ -660,13 +635,10 @@ public class QuiltFileLoader : MonoBehaviour
             }
 
             string uri = new System.Uri(path).AbsoluteUri;
-            //OutputLog("Loading: " + uri);
+            //Debug.Log("Loading: " + uri);
 
             StartCoroutine("LoadImageFileCoroutine", uri);
         }
-        
-        // 強制2D化はファイルを開くタイミングでチェック
-        //UpdatePreview2D();
     }
 
     /// <summary>
@@ -692,9 +664,9 @@ public class QuiltFileLoader : MonoBehaviour
         holoplay.quiltRT.filterMode = FilterMode.Trilinear;
         holoplay.SetupQuilt();
 
-        //OutputLog("Estimaged tiling: " + holoplay.quiltSettings.numViews);     // 選択されたTiling
+        //Debug.Log("Estimaged tiling: " + holoplay.quiltSettings.numViews);     // 選択されたTiling
 
-    
+
         // 念のため毎回GCをしてみる…
         System.GC.Collect();
 
@@ -735,7 +707,7 @@ public class QuiltFileLoader : MonoBehaviour
 
         ShowMessage("Loading the movie......", 0.5f);
         yield return new WaitForSecondsRealtime(0.5f);  // フレームが表示されそうな時間、強制的に待つ
-        //OutputLog("Play movie");
+        //Debug.Log("Play movie");
 
         // Seek
         videoPlayer.frame = 0;
@@ -777,7 +749,7 @@ public class QuiltFileLoader : MonoBehaviour
 
             holoplay.customQuiltSettings = GetTilingType(texture);
             holoplay.SetupQuilt();
-            //OutputLog("Estimaged tiling: " + holoplay.customQuiltSettings.numViews);     // 選択されたTiling
+            //Debug.Log("Estimaged tiling: " + holoplay.customQuiltSettings.numViews);     // 選択されたTiling
 
             holoplay.overrideQuilt = videoRenderTexture;
             holoplay.quiltRT.filterMode = FilterMode.Bilinear;
@@ -856,19 +828,9 @@ public class QuiltFileLoader : MonoBehaviour
             string directory = Path.GetDirectoryName(currentFile);
             files = new List<string>();
             AddTargetDirectory(directory, ref files);   // ディレクトリ内の画像一覧を取得
-
-            if (files.Count < 1)
-            {
-                // ファイルが全く無かった場合はデフォルト画像を読込み
-                files.Add(defaultImagePath);
-                currentIndex = 0;
-            }
-            else
-            {
-                files.Sort();   // パスの順に並び替え
-                currentIndex = files.IndexOf(currentFile);
-                //OutputLog("Index: " + currentIndex);
-            }
+            files.Sort();   // パスの順に並び替え
+            currentIndex = files.IndexOf(currentFile);
+            //Debug.Log("Index: " + currentIndex);
         }
 
         int index = currentIndex + step;
@@ -891,8 +853,28 @@ public class QuiltFileLoader : MonoBehaviour
         else if (index >= files.Count) {
             // インデックスがリストを超えたら、最後に送る
             index = files.Count - 1;
-        } 
+        }
         return files[index];
+    }
+
+    /// <summary>
+    /// Inside directory, listen for new files being added. If occurs, display it
+    /// </summary>
+    private string listenNewFiles(ref List<string> currentFiles)
+    {
+      // Break if not listening every update
+
+      List<string> files = new List<string>();
+      int currentIndex = 0;
+      string directory = Path.GetDirectoryName(currentFile);
+      AddTargetDirectory(directory, ref files);
+      files.Sort();
+      IEnumerable<string> newFiles = files.Except(currentFiles);
+      if (newFiles.Any()){
+        currentFiles = files;
+        return newFiles.ElementAt(0);
+      }
+      return currentFile;
     }
 
     /// <summary>
@@ -988,20 +970,10 @@ public class QuiltFileLoader : MonoBehaviour
     /// <returns></returns>
     private Quilt.Settings GetTilingType(Texture2D texture)
     {
-        // 縦横比でポートレイトかを判断
-        var isPortrait = (holoplay.cal.screenHeight > holoplay.cal.screenWidth);
-
-        // 8x6 では 4x6 でも高相関となるため例外的にチェック
-        int index4x6 = -1;
-
+        return defaultTiling;
         List<Quilt.Settings> tilingPresets = new List<Quilt.Settings>();
         foreach (var preset in Quilt.presets)
         {
-            if (preset.viewColumns == 4 && preset.viewRows == 6)
-            {
-                index4x6 = tilingPresets.Count;
-            }
-
             if ((preset.quiltHeight == texture.height) && (preset.quiltWidth == texture.width))
             {
                 // 画像サイズがプリセットのサイズと一致すれば候補とする
@@ -1018,9 +990,6 @@ public class QuiltFileLoader : MonoBehaviour
                         ));
             }
         }
-
-        // 8x6 == 48 のパターンもさらに調べる。Looking Glass Portrait で普通にQuiltを作るとこうなるため。
-        tilingPresets.Add(new Quilt.Settings(texture.width, texture.height, 8, 6, 48));
 
         // 6x10 のパターンも追加で調べる
         tilingPresets.Add(new Quilt.Settings(texture.width, texture.height, 6, 10, 60));
@@ -1044,45 +1013,38 @@ public class QuiltFileLoader : MonoBehaviour
         int skip = texture.width / 512;     // 固定値 4 としてもでも動いたが、それだと4096pxのとき遅い
         if (skip < 1) skip = 1;             // 最低1はないと無限ループとなってしまう
 
-        // Calculate the score for each Tiling preset
-        for (int presetIndex = 0; presetIndex < tilingPresets.Count; presetIndex++)
+        // Tiling候補ごとに類似度を求める
+        int index = 0;
+        foreach (var preset in tilingPresets)
         {
-            var preset = tilingPresets[presetIndex];
-            score[presetIndex] = 0;
-            
-            // Loop for each sample position in a view. It's not necessary to look at all pixels.
+            score[index] = 0;
             for (int v = 0; v < preset.viewHeight; v += skip)
             {
                 for (int u = 0; u < preset.viewWidth; u += skip)
                 {
-                    Color pixelColor = Color.black;
-                    for (int viewNo = 0; viewNo < preset.numViews; viewNo++)
+                    // 中央タイルの画素を平均値の代わりに利用する
+                    //   （各タイル間ではわずかな違いしかないと仮定）
+                    int centerTileY = preset.viewRows / 2;
+                    int centerTileX = preset.viewColumns / 2;
+                    Color average = pixels[(centerTileY * preset.viewHeight+ v) * texture.width + (centerTileX * preset.viewWidth + u)];
+
+                    // 求めた平均を使い、分散を出す
+                    Color variance = Color.clear;
+                    for (int y = 0; y < preset.viewRows; y++)
                     {
-                        int viewY = viewNo / preset.viewColumns;
-                        int viewX = viewNo % preset.viewColumns;
-
-                        // Copy the pixel color as a comparison color
-                        Color prevPixelColor = pixelColor;
-                        
-                        // RGB for the current view
-                        pixelColor = pixels[
-                            (viewY * preset.viewHeight+ v) * texture.width + (viewX * preset.viewWidth + u)
-                        ];
-                        
-                        // In the first view, only extracts the color of the comparison.
-                        if (viewNo < 1) continue;
-                        
-                        // Difference
-                        Color diff = pixelColor - prevPixelColor;
-                        
-                        // Squared Difference
-                        Color sd = diff * diff;
-
-                        // Sum of Squared Difference (RGB channels are summed independently)
-                        score[presetIndex] += (sd.r + sd.g + sd.b);
+                        for (int x = 0; x < preset.viewColumns; x++)
+                        {
+                            Color color = pixels[(y * preset.viewHeight+ v) * texture.width + (x * preset.viewWidth + u)];
+                            Color diff = color - average;
+                            variance += diff * diff;
+                        }
                     }
+
+                    // 分散の合計(SSD)を求める
+                    score[index] += (variance.r + variance.g + variance.b);
                 }
             }
+            index++;
         }
 
         // 最も評価値が良かったTilingを選択
@@ -1090,35 +1052,14 @@ public class QuiltFileLoader : MonoBehaviour
         float minScore = float.MaxValue;
         for (int i = 0; i < tilingPresets.Count; i++)
         {
-            OutputLog("Index: " + i + " Order: " + tilingPresets[i].viewColumns + " x " + tilingPresets[i].viewRows + " : " + score[i]);
+            //Debug.Log(tilingPresets[i].presetName + " : " + score[i]);
 
             if (minScore > score[i])
             {
                 selectedIndex = i;
                 minScore = score[i];
             }
-
-            // 8x6 だった場合、4x6 のスコアとの差異が 5% 未満なら 8x6 を優先させる
-            if (tilingPresets[i].viewColumns == 8 && tilingPresets[i].viewRows == 6)
-            {
-                if (selectedIndex == index4x6)
-                {
-                    if (Mathf.Abs(minScore - score[i]) < (minScore * 0.05))
-                    {
-                        selectedIndex = i;
-                        minScore = score[i];
-                    }
-                }
-            }
         }
-        
-        OutputLog("Selected preset: " + selectedIndex + " Order: " + tilingPresets[selectedIndex].viewColumns + " x " + tilingPresets[selectedIndex].viewRows);
         return tilingPresets[selectedIndex];
-    }
-    
-    [System.Diagnostics.Conditional("DEVELOPMENT_BUILD")]
-    private void OutputLog(string text)
-    {
-        Debug.Log(text);
     }
 }
